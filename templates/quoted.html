@@ -1,0 +1,15 @@
+{% extends "layout.html" %}
+
+{% block title %}
+    Quoted
+{% endblock %}
+
+{% block main %}
+
+    {% if price %}
+        {{ price }}
+    {% else %}
+        <p>No price found</p>
+    {% endif %}
+
+{% endblock %}

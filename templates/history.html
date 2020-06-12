@@ -1,0 +1,32 @@
+{% extends "layout.html" %}
+
+{% block title %}
+    History
+{% endblock %}
+
+{% block main %}
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th>Type</th>
+                <th>Symbol</th>
+                <th>Shares</th>
+                <th>Price</th>
+                <th>Transacted</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for trade in transactions %}
+                {% if trade['share_count']  %}
+                    <tr>
+                        <td class="trade-type">{{ trade['trade_type'] }}</td>
+                        <td >{{ trade['symbol'] }}</td>
+                        <td>{{ trade['share_count'] }}</td>
+                        <td>${{ trade['stock_price'] }}</td>
+                        <td>{{ trade['timestamp'] }}</td>
+                    </tr>
+                {% endif %}
+            {% endfor %}
+        </tbody>
+    </table>
+{% endblock %}
