@@ -37,8 +37,6 @@ Session(app)
 # db = SQL("sqlite:///finance.db")
 db = SQL("postgres://dtkubrkkncynja:c7d42c05cf98711964fb2e508c78858ece31a3d64f362f08c88fee7ee6adeb62@ec2-54-246-85-151.eu-west-1.compute.amazonaws.com:5432/d33b7j66qvo5ff")
 
-pgloader finance.db postgres://dtkubrkkncynja:c7d42c05cf98711964fb2e508c78858ece31a3d64f362f08c88fee7ee6adeb62@ec2-54-246-85-151.eu-west-1.compute.amazonaws.com:5432/d33b7j66qvo5ff?sslmode=require
-
 # Make sure API key is set
 if not os.environ.get("API_KEY"):
     raise RuntimeError("API_KEY not set")
