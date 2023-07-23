@@ -1,0 +1,10 @@
+__pycache__/
+app.egg-info
+*.pyc
+.DS_Store
+.env.local
+.env.test.local
+logging.local.yml
+.pytest_cache/
+.*/
+!.vscode/
