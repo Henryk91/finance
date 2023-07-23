@@ -37,7 +37,7 @@ Session(app)
 db = SQL("sqlite:///finance.db")
 
 # Make sure API key is set
-if not os.environ['API_KEY']:
+if not os.environ['ALPHA_API_KEY']:
     raise RuntimeError("API_KEY not set")
 
 @app.route("/")
