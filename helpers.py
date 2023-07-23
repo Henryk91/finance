@@ -40,8 +40,8 @@ def lookup(symbol):
 
     # Contact API
     try:
-        api_key = os.environ['API_KEY']
-        response = requests.get(f"https://cloud.iexapis.com/stable/stock/{urllib.parse.quote_plus(symbol)}/quote?token={api_key}")
+        ALPHA_API_KEY = os.environ['ALPHA_API_KEY']
+        response = requests.get(f"https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={urllib.parse.quote_plus(symbol)}&apikey={ALPHA_API_KEY}")
         response.raise_for_status()
     except requests.RequestException:
         return None
@@ -49,10 +49,11 @@ def lookup(symbol):
     # Parse response
     try:
         quote = response.json()
+        quote = quote['Global Quote']
         return {
-            "name": quote["companyName"],
-            "price": float(quote["latestPrice"]),
-            "symbol": quote["symbol"]
+            "name": quote["01. symbol"],
+            "price": float(quote["05. price"]),
+            "symbol": quote["01. symbol"]
         }
     except (KeyError, TypeError, ValueError):
         return None
