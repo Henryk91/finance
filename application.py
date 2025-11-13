@@ -1,20 +1,38 @@
 import os
-
-from cs50 import SQL
-from flask import Flask, flash, jsonify, redirect, render_template, request, session
-from flask_session import Session
+import secrets
+from decimal import Decimal
 from tempfile import mkdtemp
+
+from dotenv import load_dotenv
+from flask import Flask, redirect, render_template, request, session
+from flask_migrate import Migrate
+from flask_session import Session
 from werkzeug.exceptions import default_exceptions, HTTPException, InternalServerError
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from helpers import apology, login_required, lookup, usd
-import datetime
+from models import PortfolioPosition, TradeHistory, User, db
+
+load_dotenv()
 
 # Configure application
 app = Flask(__name__)
 
 # Ensure templates are auto-reloaded
 app.config["TEMPLATES_AUTO_RELOAD"] = True
+app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL", "sqlite:///finance.db")
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_pre_ping": True}
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+app.config["SECRET_KEY"] = os.getenv("SESSION_SECRET", secrets.token_hex(32))
+
+# Configure session to use filesystem (instead of signed cookies)
+app.config["SESSION_FILE_DIR"] = mkdtemp()
+app.config["SESSION_PERMANENT"] = False
+app.config["SESSION_TYPE"] = "filesystem"
+Session(app)
+
+db.init_app(app)
+migrate = Migrate(app, db)
 
 # Ensure responses aren't cached
 @app.after_request
@@ -26,19 +44,6 @@ def after_request(response):
 
 # Custom filter
 app.jinja_env.filters["usd"] = usd
-
-# Configure session to use filesystem (instead of signed cookies)
-app.config["SESSION_FILE_DIR"] = mkdtemp()
-app.config["SESSION_PERMANENT"] = False
-app.config["SESSION_TYPE"] = "filesystem"
-Session(app)
-
-# Configure CS50 Library to use SQLite database
-db = SQL("sqlite:///finance.db")
-
-# Make sure API key is set
-if not os.environ['ALPHA_API_KEY']:
-    raise RuntimeError("API_KEY not set")
 
 @app.route("/")
 @login_required
@@ -103,25 +108,25 @@ def login():
 
     # User reached route via POST (as by submitting a form via POST)
     if request.method == "POST":
+        username = request.form.get("username")
+        password = request.form.get("password")
 
         # Ensure username was submitted
-        if not request.form.get("username"):
+        if not username:
             return apology("must provide username", 403)
 
         # Ensure password was submitted
-        elif not request.form.get("password"):
+        if not password:
             return apology("must provide password", 403)
 
         # Query database for username
-        rows = db.execute("SELECT * FROM users WHERE username = :username",
-                          username=request.form.get("username"))
-
+        user = User.query.filter_by(username=username).first()
         # Ensure username exists and password is correct
-        if len(rows) != 1 or not check_password_hash(rows[0]["hash"], request.form.get("password")):
+        if not user or not check_password_hash(user.hash, password):
             return apology("invalid username and/or password", 403)
 
         # Remember which user has logged in
-        session["user_id"] = rows[0]["id"]
+        session["user_id"] = user.id
         session["msg"] = ''
 
 
@@ -167,27 +172,30 @@ def register():
 
     # User reached route via POST (as by submitting a form via POST)
     if request.method == "POST":
+        username = request.form.get("username")
+        password = request.form.get("password")
+        confirmation = request.form.get("confirmation")
+
         # Ensure username was submitted
-        if not request.form.get("username"):
+        if not username:
             return apology("Must provide username", 403)
 
         # Ensure password was submitted
-        elif not request.form.get("password"):
+        if not password:
             return apology("Must provide password", 403)
 
         # Endure pass and confirm is the same
-        elif request.form.get("password") != request.form.get("confirmation"):
+        if password != confirmation:
             return apology("Passwords don't match", 403)
 
         # Check if user exists
-        rows = db.execute("SELECT * FROM users WHERE username = :username",
-                          username=request.form.get("username"))
-        if len(rows) > 0:
+        if User.query.filter_by(username=username).first():
             return apology("Username already exists", 403)
 
         # Insert new user in database
-        db.execute("INSERT INTO users (username, hash) VALUES (:username,:hash)", username=request.form.get("username"), hash= generate_password_hash(request.form.get("password")))
-
+        user = User(username=username, hash=generate_password_hash(password))
+        db.session.add(user)
+        db.session.commit()
         # Redirect user to Login
         return redirect("/login")
     else:
@@ -251,7 +259,7 @@ def profile():
             return apology(msg)
 
     else:
-        return render_template("profile.html", username=user['username'])
+        return render_template("profile.html", username=user.username)
 
 
 def errorhandler(e):
@@ -280,58 +288,49 @@ def buy_stock(symbol, amount):
 
 # Get user data
 def get_user():
-    user_id = session["user_id"]
-    rows = db.execute("SELECT * FROM users WHERE id = :user_id",user_id=user_id)
-    if len(rows) <= 0:
-            return
-    else:
-        return rows[0]
+    user_id = session.get("user_id")
+    if not user_id:
+        return None
+    return User.query.get(user_id)
 
 # Update user data
-def update_user(request):
-    user_id = session["user_id"]
-    user_hash = generate_password_hash(request.form.get("password"))
-    new_username = request.form.get("new_username")
-
-    new_pass = request.form.get("new-password")
-    new_confirm = request.form.get("new-confirm")
-
-    user_rows = db.execute("SELECT * FROM users WHERE id = :user_id",user_id=user_id)
+def update_user(form, user):
+    current_password = form.get("password")
+    new_username = form.get("new_username") or user.username
+    new_pass = form.get("new-password")
+    new_confirm = form.get("new-confirm")
 
     # Ensure username exists and password is correct
-    if len(user_rows) != 1 or not check_password_hash(user_rows[0]["hash"], request.form.get("password")):
-        return apology("invalid password", 403)
+    if not check_password_hash(user.hash, current_password or ""):
+        return "Invalid password"
 
     if new_pass:
         # Updating password
-        if new_pass == new_confirm:
-            # Update passwords
-            row = db.execute("UPDATE users SET username=:new_username, hash=:new_pass WHERE id = :user_id", new_username=new_username  ,user_id=user_id, new_pass=generate_password_hash(new_pass))
-
-            session["msg"] = 'Profile Updated!'
-            return 'Profile Updated!'
-        else:
+        if new_pass != new_confirm:
             # Password Mismatch
             return "Passwords don't match"
-    else:
-        # Updating only username
-        row = db.execute("UPDATE users SET username=:username WHERE id=:user_id", username=new_username ,user_id=user_id)
-        session["msg"] = 'Profile Updated!'
+        user.hash = generate_password_hash(new_pass)
 
-        return 'Profile Updated!'
+    user.username = new_username
+    db.session.commit()
+    session["msg"] = "Profile Updated!"
+    return "Profile Updated!"
 
 # Get user balance
 def get_user_balance():
-    user_id = session["user_id"]
-    rows = db.execute("SELECT * FROM users WHERE id = :user_id",user_id=user_id)
-    if len(rows) <= 0:
-            return
-    else:
-        return rows[0]['cash']
+    user = get_user()
+    if not user:
+        return None
+    return user.cash
 
 # Save user balance
 def set_user_balance(user_id, user_balance):
-    db.execute("UPDATE users SET cash=:balance WHERE id = :user_id", balance=user_balance  ,user_id=user_id)
+    user = User.query.get(user_id)
+    if not user:
+        return
+    user.cash = Decimal(str(user_balance))
+    db.session.commit()
+
 
 # Buy stock
 def make_trade(stock_value, share_count, trade_type):
@@ -345,17 +344,16 @@ def make_trade(stock_value, share_count, trade_type):
             if can_buy_check(balance, price, share_count):
                 # User can buy shares
                 log_trade(symbol, user_id, price, share_count, trade_type)
-                post_trade_balance = balance - (price * share_count)
+                post_trade_balance = balance - Decimal(price * share_count)
                 set_user_balance(user_id,post_trade_balance)
                 return
             else:
-
                 # Insufficient funds
                 return "Insufficient funds"
         else:
             # Selling shares
             log_trade(symbol, user_id, price, share_count, trade_type)
-            post_trade_balance = balance + (price * share_count)
+            post_trade_balance = balance + Decimal(price * share_count)
             set_user_balance(user_id, post_trade_balance)
     else:
         return "DB error"
@@ -371,28 +369,59 @@ def can_buy_check(user_balance, price, share_count):
 def log_trade(symbol, user_id, stock_price, share_count, trade_type):
 
     # Insert trade in history table
-    db.execute("INSERT INTO history ( symbol, user_id, stock_price, share_count, trade_type) VALUES (:symbol, :user_id, :stock_price, :share_count, :trade_type)",symbol=symbol,user_id=user_id, stock_price=stock_price,  share_count=share_count, trade_type=trade_type)
-
-    update_user_portfolio(symbol, user_id, stock_price, share_count, trade_type)
+    trade = TradeHistory(
+        symbol=symbol,
+        user_id=user_id,
+        stock_price=stock_price,
+        share_count=share_count,
+        trade_type=trade_type,
+    )
+    db.session.add(trade)
+    update_user_portfolio(symbol, user_id, share_count, trade_type)
 
 # Get user history
 def get_user_history():
-    user_id = session["user_id"]
-    rows = db.execute("SELECT * FROM history WHERE user_id = :user_id",user_id=user_id)
-    if len(rows) <= 0:
-            return [{'stock_price': '','symbol': '', 'share_count':'', 'timestamp':'', 'trade_type': ''}]
-    else:
-        # User has history
-        return rows
+    user_id = session.get("user_id")
+    if not user_id:
+        return []
+
+    rows = (
+        TradeHistory.query.filter_by(user_id=user_id)
+        .order_by(TradeHistory.timestamp.asc())
+        .all()
+    )
+    if not rows:
+        return [
+            {"stock_price": "", "symbol": "", "share_count": "", "timestamp": "", "trade_type": ""}
+        ]
+
+    return [
+        {
+            "symbol": trade.symbol,
+            "share_count": trade.share_count,
+            "stock_price": f"{trade.stock_price:.2f}",
+            "trade_type": trade.trade_type,
+            "timestamp": trade.timestamp.strftime("%Y-%m-%d %H:%M:%S") if trade.timestamp else "",
+        }
+        for trade in rows
+    ]
 
 # get portfolio
 def get_user_portfolio():
-    user_id = session["user_id"]
-    rows = db.execute("SELECT * FROM portfolio WHERE user_id = :user_id AND share_count > 0;",user_id=user_id)
-    if len(rows) <= 0:
-            return [{'symbol': '', 'share_count': 0}]
-    else:
-        return rows
+    user_id = session.get("user_id")
+    if not user_id:
+        return [{"symbol": "", "share_count": 0}]
+    rows = (
+        PortfolioPosition.query.filter(
+            PortfolioPosition.user_id == user_id, PortfolioPosition.share_count > 0
+        )
+        .order_by(PortfolioPosition.symbol.asc())
+        .all()
+    )
+    if not rows:
+        return [{"symbol": "", "share_count": 0}]
+    return [{"symbol": row.symbol, "share_count": row.share_count} for row in rows]
+
 
 # get port with current prices
 def get_portfolio_with_price(with_usd_format):
@@ -415,34 +444,31 @@ def get_portfolio_with_price(with_usd_format):
     return stocks
 
 # update portfolio
-def update_user_portfolio(symbol, user_id, stock_price, share_count, trade_type):
+def update_user_portfolio(symbol, user_id, share_count, trade_type):
 
     # check if stock is in portfolio
-    rows = db.execute("SELECT * FROM portfolio WHERE user_id = :user_id AND symbol = :symbol",user_id=user_id, symbol=symbol)
-
-    if rows:
+    position = PortfolioPosition.query.filter_by(user_id=user_id, symbol=symbol).first()
+    if position:
         # Update portfolio
-        stock_data = rows[0]
-        if trade_type == 'buy':
-            new_count = stock_data['share_count'] + share_count
+        if trade_type == "buy":
+            position.share_count += share_count
         else:
-            new_count = stock_data['share_count'] - share_count
-
-        db.execute("UPDATE portfolio SET share_count=:share_count WHERE user_id = :user_id AND symbol=:symbol", share_count=new_count  ,user_id=user_id, symbol=symbol)
+            position.share_count -= share_count
+        db.session.commit()
     else:
         # insert into portfolio
-        db.execute("INSERT INTO portfolio (symbol, user_id, share_count) VALUES (:symbol, :user_id, :share_count)",symbol=symbol,user_id=user_id, share_count=share_count)
+        position = PortfolioPosition(symbol=symbol, user_id=user_id, share_count=share_count)
+        db.session.add(position)
 
 
 # Get user total asset value
 def total_value(cash_balance):
     stocks = get_portfolio_with_price(False)
-    ret_val = cash_balance
-
+    ret_val = cash_balance or Decimal("0")
     for stock in stocks:
         if stock['symbol'] != '':
             # Add value of stock
-            ret_val = ret_val + stock['total']
+            ret_val += Decimal(str(stock["total"]))
 
     return ret_val
 

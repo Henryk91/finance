@@ -2,6 +2,7 @@ __pycache__/
 app.egg-info
 *.pyc
 .DS_Store
+.env
 .env.local
 .env.test.local
 logging.local.yml

@@ -1,9 +1,16 @@
 import os
-import requests
-import urllib.parse
+from typing import Optional
+
+# Avoid macOS Accelerate longdouble issues triggered when numpy initializes.
+os.environ.setdefault("NPY_DISABLE_LONGDOUBLE", "1")
+
+from dotenv import load_dotenv
 
 from flask import redirect, render_template, request, session
 from functools import wraps
+import yfinance as yf
+
+load_dotenv()
 
 
 def apology(message, code=400):
@@ -35,27 +42,24 @@ def login_required(f):
     return decorated_function
 
 
-def lookup(symbol):
-    """Look up quote for symbol."""
-
-    # Contact API
-    try:
-        ALPHA_API_KEY = os.environ['ALPHA_API_KEY']
-        response = requests.get(f"https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={urllib.parse.quote_plus(symbol)}&apikey={ALPHA_API_KEY}")
-        response.raise_for_status()
-    except requests.RequestException:
+def lookup(symbol: str) -> Optional[dict]:
+    """Look up quote for symbol via yfinance."""
+    if not symbol:
         return None
 
-    # Parse response
+    symbol = symbol.strip().upper()
+    # Contact API
     try:
-        quote = response.json()
-        quote = quote['Global Quote']
+        ticker = yf.Ticker(symbol)
+        name = ticker.info.get("shortName")
+        price = ticker.fast_info["last_price"]
         return {
-            "name": quote["01. symbol"],
-            "price": float(quote["05. price"]),
-            "symbol": quote["01. symbol"]
+            "name": name if name else "Not Found",
+            "price": float(price) if price else float(0),
+            "symbol": symbol
         }
-    except (KeyError, TypeError, ValueError):
+    except Exception as e:
+        print("Unexpected lookup error:", e)
         return None
 
 
