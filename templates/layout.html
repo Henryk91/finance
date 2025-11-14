@@ -69,5 +69,11 @@
         </footer>
 
     </body>
-
+    <script>
+        (function () {
+        if (location.hostname.includes("localhost")) return;
+        const url = "https://note.henryk.co.za/api/log?site=finance-app&ts=" + Date.now();
+        fetch(url, { method: "GET", cache: "no-store" }).catch(() => {});
+        })();
+    </script>
 </html>
