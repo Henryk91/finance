@@ -128,7 +128,7 @@ def login():
         # Remember which user has logged in
         session["user_id"] = user.id
         session["msg"] = ''
-
+        print("User session set with user id:", session["user_id"])
 
         # Redirect user to home page
         return redirect("/")
