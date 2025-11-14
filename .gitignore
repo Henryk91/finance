@@ -9,3 +9,4 @@ logging.local.yml
 .pytest_cache/
 .*/
 !.vscode/
+flask_session/

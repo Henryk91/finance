@@ -26,7 +26,9 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SECRET_KEY"] = os.getenv("SESSION_SECRET", secrets.token_hex(32))
 
 # Configure session to use filesystem (instead of signed cookies)
-app.config["SESSION_FILE_DIR"] = mkdtemp()
+session_dir = os.path.join(app.instance_path, "flask_session")
+os.makedirs(session_dir, exist_ok=True)
+app.config["SESSION_FILE_DIR"] = session_dir
 app.config["SESSION_PERMANENT"] = False
 app.config["SESSION_TYPE"] = "filesystem"
 Session(app)
