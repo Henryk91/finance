@@ -4,7 +4,7 @@ from decimal import Decimal
 from tempfile import mkdtemp
 
 from dotenv import load_dotenv
-from flask import Flask, redirect, render_template, request, session
+from flask import Flask, redirect, render_template, request, session, send_from_directory
 from flask_migrate import Migrate
 from flask_session import Session
 from werkzeug.exceptions import default_exceptions, HTTPException, InternalServerError
@@ -16,7 +16,7 @@ from models import PortfolioPosition, TradeHistory, User, db
 load_dotenv()
 
 # Configure application
-app = Flask(__name__)
+app = Flask(__name__, static_folder="static")
 
 # Ensure templates are auto-reloaded
 app.config["TEMPLATES_AUTO_RELOAD"] = True
@@ -46,6 +46,10 @@ def after_request(response):
 
 # Custom filter
 app.jinja_env.filters["usd"] = usd
+
+@app.route("/robots.txt")
+def robots():
+    return send_from_directory(app.static_folder, "robots.txt", mimetype="text/plain")
 
 @app.route("/")
 @login_required
